@@ -1,0 +1,19 @@
+[package]
+name = "default-struct-builder"
+version = "0.1.0"
+edition = "2021"
+authors = ["Marc-Stefan Cassola"]
+description = "Generates builder methods of every field of a struct."
+exclude = ["examples/", "tests/"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/Synphonyte/default-struct-builder"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "2.0"
+quote = "1.0"
+darling = "0.20"
+proc-macro2 = "1.0"
