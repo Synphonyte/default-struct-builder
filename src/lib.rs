@@ -57,7 +57,7 @@
 //! # }
 //! ```
 //!
-//! # How it works
+//! ## How it works
 //!
 //! The derive macro generates the following code:
 //!
