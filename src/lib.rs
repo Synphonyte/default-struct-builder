@@ -70,6 +70,7 @@
 //! # }
 //! #
 //! impl SomeOptions {
+//!     // setter methods are given that consume `self` and return a new `Self` with the field value changed
 //!     pub fn throttle(self, value: f64) -> Self {
 //!         Self {
 //!             throttle: value,
@@ -77,6 +78,7 @@
 //!         }
 //!     }
 //!
+//!     // because `into` was specified this method is generic and calls `.into()` when setting the value
 //!     pub fn offset<T>(self, value: T) -> Self
 //!     where
 //!         T: Into<Option<f64>>,
@@ -86,6 +88,8 @@
 //!             ..self
 //!         }
 //!     }
+//!
+//!     // no method for field `not_included` because `skip` was specified
 //! }
 //! ```
 //! ## Related Work
