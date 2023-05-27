@@ -5,6 +5,14 @@
 //! This crate is used by the crate `leptos-use` for the option structs that
 //! can be passed to the various functions.
 //!
+//! ## Installation
+//!
+//! In your project folder run
+//!
+//! ```sh
+//! cargo add default-struct-builder
+//! ```
+//!
 //! ## Usage
 //!
 //! It is very easy to use:
@@ -54,6 +62,13 @@
 //! The derive macro generates the following code:
 //!
 //! ```
+//! # #[derive(Default)]
+//! # pub struct SomeOptions {
+//! #     throttle: f64,
+//! #     offset: Option<f64>,
+//! #     not_included: u32,
+//! # }
+//! #
 //! impl SomeOptions {
 //!     pub fn throttle(self, value: f64) -> Self {
 //!         Self {
@@ -75,7 +90,8 @@
 //! ```
 //! ## Related Work
 //!
-//! For more general purposes please check out
+//! For more general purposes please check out the much more powerful
+//! [`derive_builder` crate](https://github.com/colin-kiegel/rust-derive-builder).
 
 mod builder;
 

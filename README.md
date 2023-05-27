@@ -14,6 +14,14 @@ implement `Default`. There is no separate builder struct generated and no need t
 This crate is used by the crate `leptos-use` for the option structs that
 can be passed to the various functions.
 
+### Installation
+
+In your project folder run
+
+```sh
+cargo add default-struct-builder
+```
+
 ### Usage
 
 It is very easy to use:
@@ -69,6 +77,7 @@ impl SomeOptions {
 ```
 ### Related Work
 
-For more general purposes please check out
+For more general purposes please check out the much more powerful
+[`derive_builder` crate](https://github.com/colin-kiegel/rust-derive-builder).
 
 <!-- cargo-rdme end -->
