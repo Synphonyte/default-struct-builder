@@ -57,6 +57,26 @@
 //! # }
 //! ```
 //!
+//! ### Generics
+//!
+//! The macro is ready to be used on generic structs.
+//!
+//! ```
+//! use default_struct_builder::DefaultBuilder;
+//!
+//! #[derive(DefaultBuilder, Default)]
+//! pub struct SomeOptions<T>
+//! where
+//!     T: Default,
+//! {
+//!     some_field: T,
+//! }
+//! ```
+//!
+//! ### Doc comments
+//!
+//! All doc comments on fields are directly passed on to their generated setter methods.
+//!
 //! ## How it works
 //!
 //! The derive macro generates the following code:
@@ -92,6 +112,81 @@
 //!     // no method for field `not_included` because `skip` was specified
 //! }
 //! ```
+//!
+//! ### Generics
+//!
+//! In the case of a generic field the generated method is a bit more complex because by calling
+//! the method the type of the type parameter can be different than before.
+//!
+//! Let's look at the following example.
+//!
+//! ```
+//! use default_struct_builder::DefaultBuilder;
+//!
+//! #[derive(DefaultBuilder, Default)]
+//! pub struct SomeOptions<T>
+//! where
+//!     T: Default,
+//! {
+//!     some_field: T,
+//!     other_field: i16,
+//! }
+//!
+//! impl SomeOptions<f32> {
+//!     pub fn new() -> Self {
+//!         Self {
+//!             some_field: 42.0,
+//!             other_field: 0,
+//!         }   
+//!     }
+//! }
+//! #
+//! # fn main() {
+//! #    let options = SomeOptions::new().some_field("string");
+//! # }
+//! ```
+//!
+//! This generates the setter method below.
+//!
+//! ```
+//! # pub struct SomeOptions<T>
+//! # where
+//! #     T: Default,
+//! # {
+//! #     some_field: T,
+//! #     other_field: i16,
+//! # }
+//! #
+//! # impl SomeOptions<f32> {
+//! #     pub fn new() -> Self {
+//! #         Self {
+//! #             some_field: 42.0,
+//! #             other_field: 0,
+//! #         }   
+//! #     }
+//! # }
+//! #
+//! impl<T> SomeOptions<T>
+//! where
+//!     T: Default,
+//! {
+//!     pub fn some_field<NewT>(self, value: NewT) -> SomeOptions<NewT>
+//!     where
+//!         NewT: Default,
+//!     {
+//!         SomeOptions::<NewT> {
+//!             some_field: value,
+//!             other_field: self.other_field,
+//!         }
+//!     }
+//! }
+//!
+//! fn main() {
+//!    let options = SomeOptions::new()  // at first    SomeOptions<f32>
+//!         .some_field("string");       // changed to  SomeOptions<&str>
+//! }
+//! ```
+//!
 //! ## Related Work
 //!
 //! For more general purposes please check out the much more powerful
