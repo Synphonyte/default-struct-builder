@@ -1,10 +1,11 @@
+use darling::ast::Generics;
 use darling::{ast, util};
 use darling::{FromDeriveInput, FromField};
-use proc_macro2::{Group, TokenStream, TokenTree};
+use proc_macro2::{Group, Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
+use std::collections::{HashMap, HashSet};
 use syn::__private::TokenStream2;
-use syn::spanned::Spanned;
-use syn::{Error, Type};
+use syn::{Error, GenericParam, Type};
 
 #[derive(Debug, FromDeriveInput)]
 #[darling(supports(struct_named), forward_attrs(allow, doc, cfg))]
@@ -38,6 +39,8 @@ impl ToTokens for DefaultBuilderDeriveInput {
 
         let generic_idents: Vec<_> = generics.type_params().map(|t| &t.ident).collect();
 
+        let key_depends_on_value = find_dependencies(&generics, &generic_idents);
+
         let type_params = &generics.params;
         let type_params = quote! { <#(#type_params),*> };
 
@@ -55,62 +58,123 @@ impl ToTokens for DefaultBuilderDeriveInput {
             let ty = &f.ty;
             let attrs = &f.attrs;
 
-            if let Type::Path(p) = ty {
-                if p.path.segments.len() == 1 {
-                    let seg = p.path.segments.first().expect("Just checked path len");
-                    if generic_idents.contains(&&seg.ident) {
-                        if f.into {
-                            tokens.extend(
-                                Error::new_spanned(&f.ident, "Fields that have struct generic types currently don't support the `into` option")
-                                    .to_compile_error(),
-                            );
-                            return;
-                        }
+            let mut new_idents = vec![];
+            let mut old_new_ident_tokens = vec![];
+            let empty = HashSet::new();
 
-                        let new_ident = format!("New__{}", &seg.ident);
-                        let new_ident = syn::Ident::new(&new_ident, seg.span());
-                        let new_ident_token = new_ident
-                            .to_token_stream()
-                            .into_iter()
-                            .next()
-                            .expect("should be one");
+            let mut generic_field = false;
 
-                        let old_ident_token = seg
-                            .ident
-                            .to_token_stream()
-                            .into_iter()
-                            .next()
-                            .expect("should be one");
+            for generic_ident in generic_idents.iter() {
+                if stream_contains(
+                    &ty.to_token_stream(),
+                    &generic_ident
+                        .to_token_stream()
+                        .into_iter()
+                        .next()
+                        .expect("should be one"),
+                ) {
+                    generic_field = true;
 
-                        let replaced_type_params =
-                            replace_in_stream(&type_params, &old_ident_token, &new_ident_token);
+                    if f.into {
+                        tokens.extend(
+                            Error::new_spanned(&f.ident, "Fields that have struct generic types currently don't support the `into` option")
+                                .to_compile_error(),
+                        );
+                        return;
+                    }
 
-                        let replaced_where_clause =
-                            generics.where_clause.as_ref().map(|where_clause| {
-                                replace_in_stream(
-                                    &where_clause.to_token_stream(),
-                                    &old_ident_token,
-                                    &new_ident_token,
-                                )
-                            });
+                    let (new_ident, new_ident_token) = create_new_ident_and_token(generic_ident);
 
-                        let other_fields: Vec<_> = fields
-                            .clone()
-                            .into_iter()
-                            .filter_map(|of| {
-                                if of.ident == f.ident {
-                                    None
-                                } else {
-                                    let ident = &of.ident;
-                                    Some(quote! { #ident: self.#ident, })
+                    let old_ident_token = generic_ident
+                        .to_token_stream()
+                        .into_iter()
+                        .next()
+                        .expect("should be one");
+
+                    new_idents.push(new_ident.clone());
+                    old_new_ident_tokens.push((old_ident_token, new_ident_token));
+
+                    for ident in key_depends_on_value
+                        .get(&generic_ident.to_string())
+                        .unwrap_or(&empty)
+                        .iter()
+                    {
+                        let (new_ident, new_ident_token) = create_new_ident_and_token(ident);
+                        new_idents.push(new_ident);
+                        old_new_ident_tokens.push((
+                            ident
+                                .to_token_stream()
+                                .into_iter()
+                                .next()
+                                .expect("should be one"),
+                            new_ident_token,
+                        ));
+                    }
+                }
+            }
+
+            if generic_field {
+                let mut replaced_type_params = type_params.clone();
+
+                for (old_ident_token, new_ident_token) in old_new_ident_tokens.iter() {
+                    replaced_type_params = replace_in_stream(
+                        &replaced_type_params.clone(),
+                        old_ident_token,
+                        new_ident_token,
+                    );
+                }
+
+                let replaced_where_clause = generics.where_clause.as_ref().map(|where_clause| {
+                    let mut replaced_stream = where_clause.to_token_stream();
+
+                    for (old_ident_token, new_ident_token) in old_new_ident_tokens.iter() {
+                        replaced_stream = replace_in_stream(
+                            &replaced_stream.clone(),
+                            old_ident_token,
+                            new_ident_token,
+                        )
+                    }
+
+                    replaced_stream
+                });
+
+                let mut replaced_field_type = ty.to_token_stream();
+
+                for (old_ident_token, new_ident_token) in old_new_ident_tokens.iter() {
+                    replaced_field_type = replace_in_stream(
+                        &replaced_field_type.clone(),
+                        old_ident_token,
+                        new_ident_token,
+                    );
+                }
+
+                let other_fields: Vec<_> = fields
+                    .clone()
+                    .into_iter()
+                    .filter_map(|of| {
+                        if of.ident == f.ident {
+                            None
+                        } else {
+                            let ident = &of.ident;
+                            let mut token_stream = quote! { #ident: self.#ident, };
+
+                            if let Type::Path(path) = &of.ty {
+                                if let Some(seg) = path.path.segments.last() {
+                                    if seg.ident.to_string() == "PhantomData" {
+                                        token_stream = quote!( #ident: std::marker::PhantomData, );
+                                    }
                                 }
-                            })
-                            .collect();
+                            }
 
-                        methods.push(quote! {
+                            Some(token_stream)
+                        }
+                    })
+                    .collect();
+
+                methods.push(quote! {
                             #(#attrs)*
                             #[allow(non_camel_case_types)]
-                            pub fn #name<#new_ident>(self, value: #new_ident) -> #ident #replaced_type_params
+                            pub fn #name<#(#new_idents),*>(self, value: #replaced_field_type) -> #ident #replaced_type_params
                             #replaced_where_clause
                             {
                                 #ident::#replaced_type_params {
@@ -120,9 +184,7 @@ impl ToTokens for DefaultBuilderDeriveInput {
                             }
                         });
 
-                        continue;
-                    }
-                }
+                continue;
             }
 
             if f.into {
@@ -165,6 +227,105 @@ impl ToTokens for DefaultBuilderDeriveInput {
     }
 }
 
+fn find_dependencies(
+    generics: &&Generics<GenericParam>,
+    generic_idents: &Vec<&Ident>,
+) -> HashMap<String, HashSet<Ident>> {
+    let mut key_depends_on_value: HashMap<String, HashSet<Ident>> = HashMap::new();
+
+    for param in generics.type_params() {
+        let lhs = &param.ident;
+
+        for ident in generic_idents.iter() {
+            let token = ident
+                .to_token_stream()
+                .into_iter()
+                .next()
+                .expect("should be one");
+
+            if stream_contains(&param.bounds.to_token_stream(), &token) {
+                key_depends_on_value
+                    .entry(lhs.to_string())
+                    .or_default()
+                    .insert((*ident).clone());
+            }
+        }
+    }
+
+    if let Some(where_clause) = &generics.where_clause {
+        for predicate in where_clause.predicates.iter() {
+            if let syn::WherePredicate::Type(type_predicate) = predicate {
+                let bounded = type_predicate.bounded_ty.to_token_stream();
+
+                for lhs in generic_idents.iter() {
+                    if stream_contains(
+                        &bounded,
+                        &lhs.to_token_stream()
+                            .into_iter()
+                            .next()
+                            .expect("should be one"),
+                    ) {
+                        let bounds = type_predicate.bounds.to_token_stream();
+
+                        for rhs in generic_idents.iter() {
+                            let rhs_token = rhs
+                                .to_token_stream()
+                                .into_iter()
+                                .next()
+                                .expect("should be one");
+
+                            if stream_contains(&bounds, &rhs_token) {
+                                key_depends_on_value
+                                    .entry(lhs.to_string())
+                                    .or_default()
+                                    .insert((*rhs).clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut new_dependency_found = true;
+
+    // find cascading dependencies
+    while new_dependency_found {
+        new_dependency_found = false;
+
+        for (lhs, rhs) in key_depends_on_value.clone().iter() {
+            let mut new_rhs = rhs.clone();
+
+            for rhs in rhs.iter() {
+                if let Some(rhs_rhs) = key_depends_on_value.get(&rhs.to_string()) {
+                    for rhs_rhs in rhs_rhs.iter() {
+                        new_rhs.insert(rhs_rhs.clone());
+                    }
+                }
+            }
+
+            if new_rhs.len() > rhs.len() {
+                new_dependency_found = true;
+
+                key_depends_on_value.insert(lhs.clone(), new_rhs);
+            }
+        }
+    }
+
+    key_depends_on_value
+}
+
+fn create_new_ident_and_token(old_ident: &Ident) -> (Ident, TokenTree) {
+    let new_ident = format!("New__{}", old_ident);
+    let new_ident = syn::Ident::new(&new_ident, old_ident.span());
+    let new_ident_token = new_ident
+        .to_token_stream()
+        .into_iter()
+        .next()
+        .expect("should be one");
+    (new_ident, new_ident_token)
+}
+
 fn replace_old_tree_with_new(
     t: TokenTree,
     old_ident_token: &TokenTree,
@@ -192,4 +353,18 @@ fn replace_in_stream(
             .into_iter()
             .map(|t| replace_old_tree_with_new(t, old_ident_token, new_ident_token)),
     )
+}
+
+fn stream_contains(s: &TokenStream, t: &TokenTree) -> bool {
+    s.clone().into_iter().any(|token| {
+        if token.to_string() == t.to_string() {
+            return true;
+        }
+
+        if let TokenTree::Group(ref g) = token {
+            return stream_contains(&g.stream(), t);
+        }
+
+        false
+    })
 }
