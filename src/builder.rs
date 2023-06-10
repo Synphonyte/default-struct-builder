@@ -19,7 +19,7 @@ pub(crate) struct DefaultBuilderDeriveInput {
 #[darling(attributes(builder), forward_attrs(allow, doc, cfg))]
 pub(crate) struct StructField {
     pub(crate) ident: Option<syn::Ident>,
-    pub(crate) ty: syn::Type,
+    pub(crate) ty: Type,
     pub(crate) attrs: Vec<syn::Attribute>,
 
     #[darling(default)]
@@ -47,6 +47,12 @@ impl ToTokens for DefaultBuilderDeriveInput {
         let fields = data.as_ref().take_struct().expect("Is not enum").fields;
 
         let mut methods = vec![];
+
+        let dot_dot_self = if fields.len() == 1 {
+            quote! {}
+        } else {
+            quote! { ..self }
+        };
 
         for f in fields.clone().into_iter() {
             let name = f.ident.as_ref().expect("named field");
@@ -196,7 +202,7 @@ impl ToTokens for DefaultBuilderDeriveInput {
                     {
                         Self {
                             #name: value.into(),
-                            ..self
+                            #dot_dot_self
                         }
                     }
                 })
@@ -206,7 +212,7 @@ impl ToTokens for DefaultBuilderDeriveInput {
                     pub fn #name(self, value: #ty) -> Self {
                         Self {
                             #name: value,
-                            ..self
+                            #dot_dot_self
                         }
                     }
                 });
