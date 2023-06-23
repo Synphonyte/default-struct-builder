@@ -27,6 +27,9 @@ pub(crate) struct StructField {
 
     #[darling(default)]
     pub(crate) skip: bool,
+
+    #[darling(default)]
+    pub(crate) keep_type: bool,
 }
 
 impl ToTokens for DefaultBuilderDeriveInput {
@@ -68,129 +71,134 @@ impl ToTokens for DefaultBuilderDeriveInput {
             let mut old_new_ident_tokens = vec![];
             let empty = HashSet::new();
 
-            let mut generic_field = false;
+            if !f.keep_type {
+                let mut generic_field = false;
 
-            for generic_ident in generic_idents.iter() {
-                if stream_contains(
-                    &ty.to_token_stream(),
-                    &generic_ident
-                        .to_token_stream()
-                        .into_iter()
-                        .next()
-                        .expect("should be one"),
-                ) {
-                    generic_field = true;
+                for generic_ident in generic_idents.iter() {
+                    if stream_contains(
+                        &ty.to_token_stream(),
+                        &generic_ident
+                            .to_token_stream()
+                            .into_iter()
+                            .next()
+                            .expect("should be one"),
+                    ) {
+                        generic_field = true;
 
-                    if f.into {
-                        tokens.extend(
-                            Error::new_spanned(&f.ident, "Fields that have struct generic types currently don't support the `into` option")
-                                .to_compile_error(),
-                        );
-                        return;
-                    }
+                        if f.into {
+                            tokens.extend(
+                                Error::new_spanned(&f.ident, "Fields that have struct generic types currently don't support the `into` option")
+                                    .to_compile_error(),
+                            );
+                            return;
+                        }
 
-                    let (new_ident, new_ident_token) = create_new_ident_and_token(generic_ident);
+                        let (new_ident, new_ident_token) =
+                            create_new_ident_and_token(generic_ident);
 
-                    let old_ident_token = generic_ident
-                        .to_token_stream()
-                        .into_iter()
-                        .next()
-                        .expect("should be one");
+                        let old_ident_token = generic_ident
+                            .to_token_stream()
+                            .into_iter()
+                            .next()
+                            .expect("should be one");
 
-                    new_idents.push(new_ident.clone());
-                    old_new_ident_tokens.push((old_ident_token, new_ident_token));
+                        new_idents.push(new_ident.clone());
+                        old_new_ident_tokens.push((old_ident_token, new_ident_token));
 
-                    for ident in key_depends_on_value
-                        .get(&generic_ident.to_string())
-                        .unwrap_or(&empty)
-                        .iter()
-                    {
-                        let (new_ident, new_ident_token) = create_new_ident_and_token(ident);
-                        new_idents.push(new_ident);
-                        old_new_ident_tokens.push((
-                            ident
-                                .to_token_stream()
-                                .into_iter()
-                                .next()
-                                .expect("should be one"),
-                            new_ident_token,
-                        ));
+                        for ident in key_depends_on_value
+                            .get(&generic_ident.to_string())
+                            .unwrap_or(&empty)
+                            .iter()
+                        {
+                            let (new_ident, new_ident_token) = create_new_ident_and_token(ident);
+                            new_idents.push(new_ident);
+                            old_new_ident_tokens.push((
+                                ident
+                                    .to_token_stream()
+                                    .into_iter()
+                                    .next()
+                                    .expect("should be one"),
+                                new_ident_token,
+                            ));
+                        }
                     }
                 }
-            }
 
-            if generic_field {
-                let mut replaced_type_params = type_params.clone();
-
-                for (old_ident_token, new_ident_token) in old_new_ident_tokens.iter() {
-                    replaced_type_params = replace_in_stream(
-                        &replaced_type_params.clone(),
-                        old_ident_token,
-                        new_ident_token,
-                    );
-                }
-
-                let replaced_where_clause = generics.where_clause.as_ref().map(|where_clause| {
-                    let mut replaced_stream = where_clause.to_token_stream();
+                if generic_field {
+                    let mut replaced_type_params = type_params.clone();
 
                     for (old_ident_token, new_ident_token) in old_new_ident_tokens.iter() {
-                        replaced_stream = replace_in_stream(
-                            &replaced_stream.clone(),
+                        replaced_type_params = replace_in_stream(
+                            &replaced_type_params.clone(),
                             old_ident_token,
                             new_ident_token,
-                        )
+                        );
                     }
 
-                    replaced_stream
-                });
+                    let replaced_where_clause =
+                        generics.where_clause.as_ref().map(|where_clause| {
+                            let mut replaced_stream = where_clause.to_token_stream();
 
-                let mut replaced_field_type = ty.to_token_stream();
-
-                for (old_ident_token, new_ident_token) in old_new_ident_tokens.iter() {
-                    replaced_field_type = replace_in_stream(
-                        &replaced_field_type.clone(),
-                        old_ident_token,
-                        new_ident_token,
-                    );
-                }
-
-                let other_fields: Vec<_> = fields
-                    .clone()
-                    .into_iter()
-                    .filter_map(|of| {
-                        if of.ident == f.ident {
-                            None
-                        } else {
-                            let ident = &of.ident;
-                            let mut token_stream = quote! { #ident: self.#ident, };
-
-                            if let Type::Path(path) = &of.ty {
-                                if let Some(seg) = path.path.segments.last() {
-                                    if seg.ident.to_string() == "PhantomData" {
-                                        token_stream = quote!( #ident: std::marker::PhantomData, );
-                                    }
-                                }
+                            for (old_ident_token, new_ident_token) in old_new_ident_tokens.iter() {
+                                replaced_stream = replace_in_stream(
+                                    &replaced_stream.clone(),
+                                    old_ident_token,
+                                    new_ident_token,
+                                )
                             }
 
-                            Some(token_stream)
-                        }
-                    })
-                    .collect();
-
-                methods.push(quote! {
-                            #(#attrs)*
-                            #[allow(non_camel_case_types)]
-                            pub fn #name<#(#new_idents),*>(self, value: #replaced_field_type) -> #ident #replaced_type_params
-                            #replaced_where_clause
-                            {
-                                #ident::#replaced_type_params {
-                                    #name: value,
-                                    #(#other_fields)*
-                                }
-                            }
+                            replaced_stream
                         });
 
-                continue;
+                    let mut replaced_field_type = ty.to_token_stream();
+
+                    for (old_ident_token, new_ident_token) in old_new_ident_tokens.iter() {
+                        replaced_field_type = replace_in_stream(
+                            &replaced_field_type.clone(),
+                            old_ident_token,
+                            new_ident_token,
+                        );
+                    }
+
+                    let other_fields: Vec<_> = fields
+                        .clone()
+                        .into_iter()
+                        .filter_map(|of| {
+                            if of.ident == f.ident {
+                                None
+                            } else {
+                                let ident = &of.ident;
+                                let mut token_stream = quote! { #ident: self.#ident, };
+
+                                if let Type::Path(path) = &of.ty {
+                                    if let Some(seg) = path.path.segments.last() {
+                                        if seg.ident.to_string() == "PhantomData" {
+                                            token_stream =
+                                                quote!( #ident: std::marker::PhantomData, );
+                                        }
+                                    }
+                                }
+
+                                Some(token_stream)
+                            }
+                        })
+                        .collect();
+
+                    methods.push(quote! {
+                                #(#attrs)*
+                                #[allow(non_camel_case_types)]
+                                pub fn #name<#(#new_idents),*>(self, value: #replaced_field_type) -> #ident #replaced_type_params
+                                #replaced_where_clause
+                                {
+                                    #ident::#replaced_type_params {
+                                        #name: value,
+                                        #(#other_fields)*
+                                    }
+                                }
+                            });
+
+                    continue;
+                }
             }
 
             if f.into {

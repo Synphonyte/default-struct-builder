@@ -187,6 +187,21 @@
 //! }
 //! ```
 //!
+//! In cases where you don't want a generic field to be able to change the generic type you
+//! can annotate it with `keep_type`.
+//!
+//! ```
+//! # use default_struct_builder::DefaultBuilder;
+//! #
+//! #[derive(DefaultBuilder)]
+//! struct SomeOptions<T> {
+//!     #[builder(keep_type)]
+//!     the_field: T,
+//! }
+//! ```
+//!
+//! this will generate a standard builder method as if `T` wasn't generic.
+//!
 //! ## Related Work
 //!
 //! For more general purposes please check out the much more powerful
