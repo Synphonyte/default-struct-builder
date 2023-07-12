@@ -5,7 +5,7 @@ use proc_macro2::{Group, Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::collections::{HashMap, HashSet};
 use syn::__private::TokenStream2;
-use syn::{Error, GenericParam, Type};
+use syn::{Error, GenericArgument, GenericParam, PathArguments, Type};
 
 #[derive(Debug, FromDeriveInput)]
 #[darling(supports(struct_named), forward_attrs(allow, doc, cfg))]
@@ -24,6 +24,9 @@ pub(crate) struct StructField {
 
     #[darling(default)]
     pub(crate) into: bool,
+
+    #[darling(default)]
+    pub(crate) keep_box: bool,
 
     #[darling(default)]
     pub(crate) skip: bool,
@@ -201,6 +204,8 @@ impl ToTokens for DefaultBuilderDeriveInput {
                 }
             }
 
+            let boxed_inner_type = get_boxed_inner_type(&ty);
+
             if f.into {
                 methods.push(quote! {
                     #(#attrs)*
@@ -214,6 +219,25 @@ impl ToTokens for DefaultBuilderDeriveInput {
                         }
                     }
                 })
+            } else if boxed_inner_type.is_some() && !f.keep_box {
+                let boxed_inner_type = boxed_inner_type.expect("just checked above");
+
+                let boxed_inner_type = if let Type::TraitObject(obj) = boxed_inner_type {
+                    let bounds = obj.bounds;
+                    quote! { impl #bounds }
+                } else {
+                    boxed_inner_type.to_token_stream()
+                };
+
+                methods.push(quote! {
+                    #(#attrs)*
+                    pub fn #name(self, value: #boxed_inner_type) -> Self {
+                        Self {
+                            #name: Box::new(value),
+                            #dot_dot_self
+                        }
+                    }
+                });
             } else {
                 methods.push(quote! {
                     #(#attrs)*
@@ -381,4 +405,23 @@ fn stream_contains(s: &TokenStream, t: &TokenTree) -> bool {
 
         false
     })
+}
+
+fn get_boxed_inner_type(ty: &Type) -> Option<Type> {
+    match ty {
+        Type::Path(path) => {
+            if let Some(seg) = path.path.segments.last() {
+                if seg.ident.to_string().starts_with("Box") {
+                    if let PathArguments::AngleBracketed(args) = &seg.arguments {
+                        if let Some(GenericArgument::Type(ty)) = args.args.first() {
+                            return Some(ty.clone());
+                        }
+                    }
+                }
+            }
+
+            None
+        }
+        _ => None,
+    }
 }

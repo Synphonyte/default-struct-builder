@@ -202,6 +202,69 @@
 //!
 //! this will generate a standard builder method as if `T` wasn't generic.
 //!
+//! ### `Box`
+//!
+//! The macro detects if a field is a `Box` and generates a builder method that
+//! accepts the inner type (without `Box`) and adds the box in the body.
+//!
+//! In case it's a `Box<dyn Trait>` the builder method will have an argument of type
+//! `impl Trait`.
+//!
+//! If you want to prevent this auto un-boxing you can use the `#[builder(keep_box)]` attribute.
+//!
+//! ```
+//! # use default_struct_builder::DefaultBuilder;
+//! #
+//! trait Test {}
+//!
+//! #[derive(DefaultBuilder)]
+//! struct SomeOptions {
+//!     the_field: Box<dyn Test + 'static>,
+//!     other_field: Box<String>,
+//!
+//!     #[builder(keep_box)]
+//!     keep: Box<String>,
+//! }
+//! ```
+//!
+//! This will generate the following code:
+//!
+//! ```
+//! # use default_struct_builder::DefaultBuilder;
+//! #
+//! # trait Test {}
+//! #
+//! # struct SomeOptions {
+//! #     the_field: Box<dyn Test + 'static>,
+//! #     other_field: Box<String>,
+//! #     keep: Box<String>,
+//! # }
+//! #
+//! impl SomeOptions {
+//!     pub fn the_field(self, value: impl Test + 'static) -> Self {
+//!         Self {
+//!             the_field: Box::new(value),
+//!             ..self
+//!         }   
+//!     }
+//!
+//!     pub fn other_field(self, value: String) -> Self {
+//!         Self {
+//!             other_field: Box::new(value),
+//!             ..self
+//!         }
+//!     }
+//!
+//!     pub fn keep(self, value: Box<String>) -> Self {
+//!         Self {
+//!             keep: value,
+//!             ..self
+//!         }   
+//!     }
+//! }
+//! ```
+//!
+//!
 //! ## Related Work
 //!
 //! For more general purposes please check out the much more powerful
