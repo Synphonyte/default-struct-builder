@@ -224,7 +224,7 @@ impl ToTokens for DefaultBuilderDeriveInput {
 
                 let boxed_inner_type = if let Type::TraitObject(obj) = boxed_inner_type {
                     let bounds = obj.bounds;
-                    quote! { impl #bounds }
+                    quote! { impl #bounds + 'static }
                 } else {
                     boxed_inner_type.to_token_stream()
                 };

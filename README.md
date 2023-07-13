@@ -181,7 +181,7 @@ trait Test {}
 
 #[derive(DefaultBuilder)]
 struct SomeOptions {
-    the_field: Box<dyn Test + 'static>,
+    the_field: Box<dyn Test>,
     other_field: Box<String>,
 
     #[builder(keep_box)]
