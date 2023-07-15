@@ -204,21 +204,34 @@ impl ToTokens for DefaultBuilderDeriveInput {
                 }
             }
 
-            let boxed_inner_type = get_boxed_inner_type(&ty);
+            let boxed_inner_type = get_inner_type(&ty, "Box");
+            let option_inner_type = get_inner_type(&ty, "Option");
 
             if f.into {
-                methods.push(quote! {
-                    #(#attrs)*
-                    pub fn #name<T__>(self, value: T__) -> Self
-                    where
-                        T__: Into<#ty>,
-                    {
-                        Self {
-                            #name: value.into(),
-                            #dot_dot_self
+                if let Some(inner_type) = option_inner_type {
+                    methods.push(quote! {
+                        #(#attrs)*
+                        pub fn #name<OptionInnerType>(self, value: impl Into<Option<OptionInnerType>>) -> Self
+                        where
+                            OptionInnerType: Into<#inner_type>
+                        {
+                            Self {
+                                #name: value.into().map(|v| v.into()),
+                                #dot_dot_self
+                            }
                         }
-                    }
-                })
+                    })
+                } else {
+                    methods.push(quote! {
+                        #(#attrs)*
+                        pub fn #name(self, value: impl Into<#ty>) -> Self {
+                            Self {
+                                #name: value.into(),
+                                #dot_dot_self
+                            }
+                        }
+                    })
+                }
             } else if boxed_inner_type.is_some() && !f.keep_box {
                 let boxed_inner_type = boxed_inner_type.expect("just checked above");
 
@@ -407,11 +420,11 @@ fn stream_contains(s: &TokenStream, t: &TokenTree) -> bool {
     })
 }
 
-fn get_boxed_inner_type(ty: &Type) -> Option<Type> {
+fn get_inner_type(ty: &Type, outer_type_start: &str) -> Option<Type> {
     match ty {
         Type::Path(path) => {
             if let Some(seg) = path.path.segments.last() {
-                if seg.ident.to_string().starts_with("Box") {
+                if seg.ident.to_string().starts_with(outer_type_start) {
                     if let PathArguments::AngleBracketed(args) = &seg.arguments {
                         if let Some(GenericArgument::Type(ty)) = args.args.first() {
                             return Some(ty.clone());
