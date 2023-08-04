@@ -166,15 +166,15 @@ struct SomeOptions<T> {
 
 this will generate a standard builder method as if `T` wasn't generic.
 
-#### `Box`
+#### `Box`, `Rc` and `Arc`
 
-The macro detects if a field is a `Box` and generates a builder method that
-accepts the inner type (without `Box`) and adds the box in the body.
+The macro detects if a field is a `Box` (or `Rc` or `Arc`) and generates a builder method that
+accepts the inner type (without `Box` or `Rc` or `Arc`) and adds the outer type in the body.
 
 In case it's a `Box<dyn Trait>` the builder method will have an argument of type
-`impl Trait`.
+`impl Trait`. The same goes for `Rc` and `Arc`.
 
-If you want to prevent this auto un-boxing you can use the `#[builder(keep_box)]` attribute.
+If you want to prevent this auto un-wrapping you can use the `#[builder(keep_outer)]` attribute.
 
 ```rust
 trait Test {}
@@ -182,9 +182,9 @@ trait Test {}
 #[derive(DefaultBuilder)]
 struct SomeOptions {
     the_field: Box<dyn Test>,
-    other_field: Box<String>,
+    other_field: Rc<String>,
 
-    #[builder(keep_box)]
+    #[builder(keep_outer)]
     keep: Box<String>,
 }
 ```
@@ -202,7 +202,7 @@ impl SomeOptions {
 
     pub fn other_field(self, value: String) -> Self {
         Self {
-            other_field: Box::new(value),
+            other_field: Rc::new(value),
             ..self
         }
     }

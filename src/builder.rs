@@ -5,7 +5,7 @@ use proc_macro2::{Group, Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::collections::{HashMap, HashSet};
 use syn::__private::TokenStream2;
-use syn::{Error, GenericArgument, GenericParam, PathArguments, Type};
+use syn::{Attribute, Error, GenericArgument, GenericParam, PathArguments, Type};
 
 #[derive(Debug, FromDeriveInput)]
 #[darling(supports(struct_named), forward_attrs(allow, doc, cfg))]
@@ -26,7 +26,7 @@ pub(crate) struct StructField {
     pub(crate) into: bool,
 
     #[darling(default)]
-    pub(crate) keep_box: bool,
+    pub(crate) keep_outer: bool,
 
     #[darling(default)]
     pub(crate) skip: bool,
@@ -205,6 +205,7 @@ impl ToTokens for DefaultBuilderDeriveInput {
             }
 
             let boxed_inner_type = get_inner_type(&ty, "Box");
+            let rc_inner_type = get_inner_type(&ty, "Rc");
             let option_inner_type = get_inner_type(&ty, "Option");
 
             if f.into {
@@ -232,25 +233,24 @@ impl ToTokens for DefaultBuilderDeriveInput {
                         }
                     })
                 }
-            } else if boxed_inner_type.is_some() && !f.keep_box {
-                let boxed_inner_type = boxed_inner_type.expect("just checked above");
-
-                let boxed_inner_type = if let Type::TraitObject(obj) = boxed_inner_type {
-                    let bounds = obj.bounds;
-                    quote! { impl #bounds + 'static }
-                } else {
-                    boxed_inner_type.to_token_stream()
-                };
-
-                methods.push(quote! {
-                    #(#attrs)*
-                    pub fn #name(self, value: #boxed_inner_type) -> Self {
-                        Self {
-                            #name: Box::new(value),
-                            #dot_dot_self
-                        }
-                    }
-                });
+            } else if boxed_inner_type.is_some() && !f.keep_outer {
+                auto_wrapper_method(
+                    &mut methods,
+                    &dot_dot_self,
+                    name,
+                    attrs,
+                    boxed_inner_type,
+                    quote! { Box },
+                );
+            } else if rc_inner_type.is_some() && !f.keep_outer {
+                auto_wrapper_method(
+                    &mut methods,
+                    &dot_dot_self,
+                    name,
+                    attrs,
+                    rc_inner_type,
+                    quote! { Rc },
+                );
             } else {
                 methods.push(quote! {
                     #(#attrs)*
@@ -437,4 +437,32 @@ fn get_inner_type(ty: &Type, outer_type_start: &str) -> Option<Type> {
         }
         _ => None,
     }
+}
+
+fn auto_wrapper_method(
+    methods: &mut Vec<TokenStream>,
+    dot_dot_self: &TokenStream,
+    name: &Ident,
+    attrs: &Vec<Attribute>,
+    inner_type: Option<Type>,
+    wrapper_type: TokenStream,
+) {
+    let boxed_inner_type = inner_type.expect("just checked above");
+
+    let boxed_inner_type = if let Type::TraitObject(obj) = boxed_inner_type {
+        let bounds = obj.bounds;
+        quote! { impl #bounds + 'static }
+    } else {
+        boxed_inner_type.to_token_stream()
+    };
+
+    methods.push(quote! {
+        #(#attrs)*
+        pub fn #name(self, value: #boxed_inner_type) -> Self {
+            Self {
+                #name: #wrapper_type::new(value),
+                #dot_dot_self
+            }
+        }
+    });
 }
