@@ -204,8 +204,15 @@ impl ToTokens for DefaultBuilderDeriveInput {
                 }
             }
 
-            let boxed_inner_type = get_inner_type(&ty, "Box");
-            let rc_inner_type = get_inner_type(&ty, "Rc");
+            let unwrap_inner_type = [
+                (get_inner_type(&ty, "Box"), quote! { Box }),
+                (get_inner_type(&ty, "Rc"), quote! { Rc }),
+                (get_inner_type(&ty, "Arc"), quote! { Arc }),
+            ]
+            .into_iter()
+            .filter_map(|(ty, tok)| ty.map(|t| (t, tok)))
+            .next();
+
             let option_inner_type = get_inner_type(&ty, "Option");
 
             if f.into {
@@ -233,23 +240,16 @@ impl ToTokens for DefaultBuilderDeriveInput {
                         }
                     })
                 }
-            } else if boxed_inner_type.is_some() && !f.keep_outer {
+            } else if unwrap_inner_type.is_some() && !f.keep_outer {
+                let (inner_type, inner_type_token) = unwrap_inner_type.expect("just checked above");
+
                 auto_wrapper_method(
                     &mut methods,
                     &dot_dot_self,
                     name,
                     attrs,
-                    boxed_inner_type,
-                    quote! { Box },
-                );
-            } else if rc_inner_type.is_some() && !f.keep_outer {
-                auto_wrapper_method(
-                    &mut methods,
-                    &dot_dot_self,
-                    name,
-                    attrs,
-                    rc_inner_type,
-                    quote! { Rc },
+                    inner_type,
+                    inner_type_token,
                 );
             } else {
                 methods.push(quote! {
@@ -444,21 +444,19 @@ fn auto_wrapper_method(
     dot_dot_self: &TokenStream,
     name: &Ident,
     attrs: &Vec<Attribute>,
-    inner_type: Option<Type>,
+    inner_type: Type,
     wrapper_type: TokenStream,
 ) {
-    let boxed_inner_type = inner_type.expect("just checked above");
-
-    let boxed_inner_type = if let Type::TraitObject(obj) = boxed_inner_type {
+    let inner_type = if let Type::TraitObject(obj) = inner_type {
         let bounds = obj.bounds;
         quote! { impl #bounds + 'static }
     } else {
-        boxed_inner_type.to_token_stream()
+        inner_type.to_token_stream()
     };
 
     methods.push(quote! {
         #(#attrs)*
-        pub fn #name(self, value: #boxed_inner_type) -> Self {
+        pub fn #name(self, value: #inner_type) -> Self {
             Self {
                 #name: #wrapper_type::new(value),
                 #dot_dot_self
