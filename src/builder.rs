@@ -175,7 +175,7 @@ impl ToTokens for DefaultBuilderDeriveInput {
 
                                 if let Type::Path(path) = &of.ty {
                                     if let Some(seg) = path.path.segments.last() {
-                                        if seg.ident.to_string() == "PhantomData" {
+                                        if seg.ident == "PhantomData" {
                                             token_stream =
                                                 quote!( #ident: std::marker::PhantomData, );
                                         }
@@ -205,15 +205,15 @@ impl ToTokens for DefaultBuilderDeriveInput {
             }
 
             let unwrap_inner_type = [
-                (get_inner_type(&ty, "Box"), quote! { Box }),
-                (get_inner_type(&ty, "Rc"), quote! { Rc }),
-                (get_inner_type(&ty, "Arc"), quote! { Arc }),
+                (get_inner_type(ty, "Box"), quote! { Box }),
+                (get_inner_type(ty, "Rc"), quote! { Rc }),
+                (get_inner_type(ty, "Arc"), quote! { Arc }),
             ]
             .into_iter()
             .filter_map(|(ty, tok)| ty.map(|t| (t, tok)))
             .next();
 
-            let option_inner_type = get_inner_type(&ty, "Option");
+            let option_inner_type = get_inner_type(ty, "Option");
 
             if f.into {
                 if let Some(inner_type) = option_inner_type {
@@ -280,7 +280,7 @@ impl ToTokens for DefaultBuilderDeriveInput {
 
 fn find_dependencies(
     generics: &&Generics<GenericParam>,
-    generic_idents: &Vec<&Ident>,
+    generic_idents: &[&Ident],
 ) -> HashMap<String, HashSet<Ident>> {
     let mut key_depends_on_value: HashMap<String, HashSet<Ident>> = HashMap::new();
 
