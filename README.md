@@ -220,6 +220,6 @@ impl SomeOptions {
 ### Related Work
 
 For more general purposes please check out the much more powerful
-[`typed-builder` crate](https://github.com/idanarye/rust-typed-builder).
+[`derive_builder` crate](https://github.com/colin-kiegel/rust-derive-builder).
 
 <!-- cargo-rdme end -->
