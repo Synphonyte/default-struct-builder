@@ -4,7 +4,6 @@ use darling::{FromDeriveInput, FromField};
 use proc_macro2::{Group, Ident, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::collections::{HashMap, HashSet};
-use syn::__private::TokenStream2;
 use syn::{Attribute, Error, GenericArgument, GenericParam, PathArguments, Type};
 
 #[derive(Debug, FromDeriveInput)]
@@ -36,7 +35,7 @@ pub(crate) struct StructField {
 }
 
 impl ToTokens for DefaultBuilderDeriveInput {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let DefaultBuilderDeriveInput {
             ref ident,
             ref data,
